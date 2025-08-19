@@ -58,19 +58,17 @@ func main() {
 	// Shorten the path display
 	pwdShort := shortenPath(data.Workspace.CurrentDir, currentUser.HomeDir, data.Workspace.ProjectDir)
 
-	template := `%s %s [%s]`
+	template := `%s %s`
 
 	if gitBranch != "" {
 		output := fmt.Sprintf(template,
 			fmt.Sprintf("\033[36m%s\033[0m", gitBranch),
-			fmt.Sprintf("\033[35m%s\033[0m", pwdShort),
-			fmt.Sprintf("\033[2m%s\033[0m", data.Model.DisplayName))
+			fmt.Sprintf("\033[35m%s\033[0m", pwdShort))
 		fmt.Print(output)
 	} else {
-		template := `%s [%s]`
+		template := `%s`
 		output := fmt.Sprintf(template,
-			fmt.Sprintf("\033[35m%s\033[0m", pwdShort),
-			fmt.Sprintf("\033[2m%s\033[0m", data.Model.DisplayName))
+			fmt.Sprintf("\033[35m%s\033[0m", pwdShort))
 		fmt.Print(output)
 	}
 }
