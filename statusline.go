@@ -49,22 +49,32 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Get git branch if in a git repository
+	// Get git branch and status if in a git repository
 	var gitBranch string
+	var gitStatus string
 	if isGitRepo(data.Workspace.CurrentDir) {
 		gitBranch = getGitBranch(data.Workspace.CurrentDir)
+		gitStatus = getGitStatus(data.Workspace.CurrentDir)
 	}
 
 	// Shorten the path display
 	pwdShort := shortenPath(data.Workspace.CurrentDir, currentUser.HomeDir, data.Workspace.ProjectDir)
 
-	template := `%s %s`
-
 	if gitBranch != "" {
-		output := fmt.Sprintf(template,
-			fmt.Sprintf("\033[36m%s\033[0m", gitBranch),
-			fmt.Sprintf("\033[35m%s\033[0m", pwdShort))
-		fmt.Print(output)
+		if gitStatus != "" {
+			template := `%s%s %s`
+			output := fmt.Sprintf(template,
+				fmt.Sprintf("\033[36m%s\033[0m", gitBranch),
+				gitStatus,
+				fmt.Sprintf("\033[35m%s\033[0m", pwdShort))
+			fmt.Print(output)
+		} else {
+			template := `%s %s`
+			output := fmt.Sprintf(template,
+				fmt.Sprintf("\033[36m%s\033[0m", gitBranch),
+				fmt.Sprintf("\033[35m%s\033[0m", pwdShort))
+			fmt.Print(output)
+		}
 	} else {
 		template := `%s`
 		output := fmt.Sprintf(template,
@@ -95,6 +105,69 @@ func getGitBranch(dir string) string {
 		return strings.TrimSpace(string(output))
 	}
 
+	return ""
+}
+
+func getGitStatus(dir string) string {
+	cmd := exec.Command("git", "-C", dir, "status", "--porcelain=v1")
+	cmd.Stderr = nil
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(lines) == 1 && lines[0] == "" {
+		return ""
+	}
+
+	var statusParts []string
+	staged := 0
+	modified := 0
+	added := 0
+	deleted := 0
+
+	for _, line := range lines {
+		if len(line) < 2 {
+			continue
+		}
+
+		stagedStatus := line[0]
+		// workingStatus := line[1]
+
+		// Count staged changes
+		if stagedStatus != ' ' && stagedStatus != '?' {
+			staged++
+			switch stagedStatus {
+			case 'A':
+				added++
+			case 'D':
+				deleted++
+			case 'M', 'R', 'C':
+				modified++
+			}
+		}
+	}
+
+	if staged > 0 {
+		var parts []string
+		if added > 0 {
+			parts = append(parts, fmt.Sprintf("\033[32m+%d\033[0m", added))
+		}
+		if modified > 0 {
+			parts = append(parts, fmt.Sprintf("\033[33m~%d\033[0m", modified))
+		}
+		if deleted > 0 {
+			parts = append(parts, fmt.Sprintf("\033[31m-%d\033[0m", deleted))
+		}
+		if len(parts) > 0 {
+			statusParts = append(statusParts, strings.Join(parts, ""))
+		}
+	}
+
+	if len(statusParts) > 0 {
+		return " " + strings.Join(statusParts, " ")
+	}
 	return ""
 }
 
