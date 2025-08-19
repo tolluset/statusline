@@ -164,6 +164,10 @@ func getGitStatus(dir string) string {
 		}
 	}
 
+	// Get staged changes statistics
+	stagedStats := getGitDiffStat(dir, true)
+	unstagedStats := getGitDiffStat(dir, false)
+
 	if stagedAdded > 0 || stagedModified > 0 || stagedDeleted > 0 {
 		var parts []string
 		if stagedAdded > 0 {
@@ -175,9 +179,11 @@ func getGitStatus(dir string) string {
 		if stagedDeleted > 0 {
 			parts = append(parts, fmt.Sprintf("\033[31m-%d\033[0m", stagedDeleted))
 		}
-		if len(parts) > 0 {
-			statusParts = append(statusParts, strings.Join(parts, ""))
+		statusText := strings.Join(parts, "")
+		if stagedStats != "" {
+			statusText += stagedStats
 		}
+		statusParts = append(statusParts, statusText)
 	}
 
 	if unstagedAdded > 0 || unstagedModified > 0 || unstagedDeleted > 0 {
@@ -191,13 +197,76 @@ func getGitStatus(dir string) string {
 		if unstagedDeleted > 0 {
 			parts = append(parts, fmt.Sprintf("\033[91m-%d\033[0m", unstagedDeleted))
 		}
-		if len(parts) > 0 {
-			statusParts = append(statusParts, strings.Join(parts, ""))
+		statusText := strings.Join(parts, "")
+		if unstagedStats != "" {
+			statusText += unstagedStats
 		}
+		statusParts = append(statusParts, statusText)
 	}
 
 	if len(statusParts) > 0 {
 		return " " + strings.Join(statusParts, " ")
+	}
+	return ""
+}
+
+func getGitDiffStat(dir string, staged bool) string {
+	var cmd *exec.Cmd
+	if staged {
+		cmd = exec.Command("git", "-C", dir, "diff", "--cached", "--shortstat")
+	} else {
+		cmd = exec.Command("git", "-C", dir, "diff", "--shortstat")
+	}
+	cmd.Stderr = nil
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	statLine := strings.TrimSpace(string(output))
+	if statLine == "" {
+		return ""
+	}
+
+	// Parse shortstat output like "2 files changed, 150 insertions(+), 50 deletions(-)"
+	var filesChanged, insertions, deletions int
+	if strings.Contains(statLine, "file") {
+		fmt.Sscanf(statLine, "%d file", &filesChanged)
+	}
+	if strings.Contains(statLine, "insertion") {
+		parts := strings.Split(statLine, ", ")
+		for _, part := range parts {
+			if strings.Contains(part, "insertion") {
+				fmt.Sscanf(part, "%d insertion", &insertions)
+			}
+		}
+	}
+	if strings.Contains(statLine, "deletion") {
+		parts := strings.Split(statLine, ", ")
+		for _, part := range parts {
+			if strings.Contains(part, "deletion") {
+				fmt.Sscanf(part, "%d deletion", &deletions)
+			}
+		}
+	}
+
+	var statParts []string
+	if filesChanged > 0 {
+		statParts = append(statParts, fmt.Sprintf("(\033[36m%df\033[0m", filesChanged))
+	}
+	if insertions > 0 {
+		statParts = append(statParts, fmt.Sprintf("\033[32m+%d\033[0m", insertions))
+	}
+	if deletions > 0 {
+		statParts = append(statParts, fmt.Sprintf("\033[31m-%d\033[0m", deletions))
+	}
+
+	if len(statParts) > 0 {
+		result := strings.Join(statParts, "")
+		if filesChanged > 0 {
+			result += ")"
+		}
+		return result
 	}
 	return ""
 }
