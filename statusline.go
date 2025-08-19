@@ -81,12 +81,14 @@ func main() {
 		gitStatus = getGitStatus(data.Workspace.CurrentDir)
 	}
 
-	// Get GitHub notifications
+	// Get GitHub notifications (only if enabled)
 	envVars := loadEnv()
-	notiCount := getNotificationCount(envVars)
 	var notiStatus string
-	if notiCount > 0 {
-		notiStatus = fmt.Sprintf(" \033[31m🔔%d\033[0m", notiCount)
+	if envVars["SHOW_GITHUB_NOTIFICATIONS"] == "true" {
+		notiCount := getNotificationCount(envVars)
+		if notiCount > 0 {
+			notiStatus = fmt.Sprintf(" \033[31m🔔%d\033[0m", notiCount)
+		}
 	}
 
 	// Shorten the path display
@@ -414,7 +416,15 @@ func (c *Cache) isValid(entry CacheEntry) bool {
 
 func loadEnv() map[string]string {
 	envVars := make(map[string]string)
-	file, err := os.Open(".env")
+
+	// Load from ~/.claude/.env
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return envVars
+	}
+
+	envFile := filepath.Join(homeDir, ".claude", ".env")
+	file, err := os.Open(envFile)
 	if err != nil {
 		return envVars
 	}

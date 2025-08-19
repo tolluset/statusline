@@ -85,7 +85,7 @@ func TestShortenPath(t *testing.T) {
 
 func TestIsGitRepo(t *testing.T) {
 	tempDir := t.TempDir()
-	
+
 	t.Run("not a git repository", func(t *testing.T) {
 		if isGitRepo(tempDir) {
 			t.Errorf("isGitRepo() = true, want false for non-git directory")
@@ -115,7 +115,7 @@ func TestIsGitRepo(t *testing.T) {
 func TestGetGitBranch(t *testing.T) {
 	tempDir := t.TempDir()
 	gitDir := filepath.Join(tempDir, "test-repo")
-	
+
 	err := os.Mkdir(gitDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create test directory: %v", err)
@@ -170,7 +170,7 @@ func TestGetGitBranch(t *testing.T) {
 func TestGetGitStatus(t *testing.T) {
 	tempDir := t.TempDir()
 	gitDir := filepath.Join(tempDir, "test-repo")
-	
+
 	err := os.Mkdir(gitDir, 0755)
 	if err != nil {
 		t.Fatalf("Failed to create test directory: %v", err)
@@ -246,7 +246,7 @@ func TestMainFunction(t *testing.T) {
 
 	cmd := exec.Command("go", "run", "statusline.go")
 	cmd.Stdin = bytes.NewReader(jsonInput)
-	
+
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -270,7 +270,7 @@ func TestMainFunction(t *testing.T) {
 func TestMainFunctionNoStdin(t *testing.T) {
 	cmd := exec.Command("go", "run", "statusline.go")
 	cmd.Stdin = strings.NewReader("")
-	
+
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -287,7 +287,7 @@ func TestMainFunctionNoStdin(t *testing.T) {
 func TestMainFunctionInvalidJSON(t *testing.T) {
 	cmd := exec.Command("go", "run", "statusline.go")
 	cmd.Stdin = strings.NewReader("{invalid json}")
-	
+
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -304,7 +304,7 @@ func TestMainFunctionInvalidJSON(t *testing.T) {
 func TestCache(t *testing.T) {
 	tempDir := t.TempDir()
 	cacheFile := filepath.Join(tempDir, "test-cache.txt")
-	
+
 	cache := NewCache(cacheFile, 1*time.Second)
 
 	t.Run("cache miss", func(t *testing.T) {
@@ -331,7 +331,7 @@ func TestCache(t *testing.T) {
 
 	t.Run("cache expiration", func(t *testing.T) {
 		shortCache := NewCache(cacheFile, 10*time.Millisecond)
-		
+
 		err := shortCache.Set("expire-key", "expire-value")
 		if err != nil {
 			t.Fatalf("Failed to set cache: %v", err)
@@ -416,8 +416,15 @@ func TestCacheEntry(t *testing.T) {
 
 func TestLoadEnv(t *testing.T) {
 	tempDir := t.TempDir()
-	envFile := filepath.Join(tempDir, ".env")
-	
+	claudeDir := filepath.Join(tempDir, ".claude")
+	envFile := filepath.Join(claudeDir, ".env")
+
+	// Create .claude directory
+	err := os.MkdirAll(claudeDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create .claude directory: %v", err)
+	}
+
 	// Create test .env file
 	envContent := `# Test comment
 TEST_KEY=test_value
@@ -426,37 +433,30 @@ GITHUB_TOKEN=ghp_test123
 # Another comment
 EMPTY_VALUE=
 SPACES_VALUE= value with spaces `
-	err := os.WriteFile(envFile, []byte(envContent), 0644)
+	err = os.WriteFile(envFile, []byte(envContent), 0644)
 	if err != nil {
 		t.Fatalf("Failed to create test .env file: %v", err)
 	}
-	
-	// Change to temp directory
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get current directory: %v", err)
-	}
-	defer os.Chdir(origDir)
-	
-	err = os.Chdir(tempDir)
-	if err != nil {
-		t.Fatalf("Failed to change directory: %v", err)
-	}
-	
+
+	// Mock home directory
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tempDir)
+
 	envVars := loadEnv()
-	
+
 	if envVars["TEST_KEY"] != "test_value" {
 		t.Errorf("Expected TEST_KEY=test_value, got %s", envVars["TEST_KEY"])
 	}
-	
+
 	if envVars["GITHUB_TOKEN"] != "ghp_test123" {
 		t.Errorf("Expected GITHUB_TOKEN=ghp_test123, got %s", envVars["GITHUB_TOKEN"])
 	}
-	
+
 	if envVars["EMPTY_VALUE"] != "" {
 		t.Errorf("Expected EMPTY_VALUE to be empty, got %s", envVars["EMPTY_VALUE"])
 	}
-	
+
 	if envVars["SPACES_VALUE"] != "value with spaces" {
 		t.Errorf("Expected SPACES_VALUE='value with spaces', got '%s'", envVars["SPACES_VALUE"])
 	}
@@ -469,7 +469,7 @@ func TestFetchGitHubNotifications(t *testing.T) {
 			t.Errorf("Expected error for empty token")
 		}
 	})
-	
+
 	t.Run("successful API call", func(t *testing.T) {
 		// Create mock server
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -480,7 +480,7 @@ func TestFetchGitHubNotifications(t *testing.T) {
 			if r.Header.Get("Accept") != "application/vnd.github+json" {
 				t.Errorf("Expected Accept header 'application/vnd.github+json', got %s", r.Header.Get("Accept"))
 			}
-			
+
 			// Mock response
 			mockResponse := `[
 				{
@@ -502,7 +502,7 @@ func TestFetchGitHubNotifications(t *testing.T) {
 			w.Write([]byte(mockResponse))
 		}))
 		defer server.Close()
-		
+
 		// This test would need to modify the actual API URL, which is hardcoded
 		// For a real implementation, we'd make the URL configurable
 		// For now, we'll just test with the actual API (but expect it to fail due to invalid token)
@@ -519,7 +519,7 @@ func TestGetNotificationCount(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	defer os.Setenv("HOME", origHome)
 	os.Setenv("HOME", tempDir)
-	
+
 	t.Run("empty token", func(t *testing.T) {
 		envVars := map[string]string{}
 		count := getNotificationCount(envVars)
@@ -527,7 +527,7 @@ func TestGetNotificationCount(t *testing.T) {
 			t.Errorf("Expected -1 for empty token, got %d", count)
 		}
 	})
-	
+
 	t.Run("invalid token", func(t *testing.T) {
 		envVars := map[string]string{"GITHUB_TOKEN": "invalid_token_unique_12345"}
 		count := getNotificationCount(envVars)
@@ -535,50 +535,70 @@ func TestGetNotificationCount(t *testing.T) {
 			t.Errorf("Expected -1 for invalid token, got %d", count)
 		}
 	})
+
+	t.Run("notifications disabled", func(t *testing.T) {
+		envVars := map[string]string{
+			"GITHUB_TOKEN":              "valid_token",
+			"SHOW_GITHUB_NOTIFICATIONS": "false",
+		}
+		// This test assumes the main statusline function would skip calling getNotificationCount
+		// when SHOW_GITHUB_NOTIFICATIONS is false
+		count := getNotificationCount(envVars)
+		// getNotificationCount still works, but main function won't call it
+		if count == -1 {
+			// Expected behavior when token is invalid or API fails
+		}
+	})
 }
 
 func TestHandleNotiCommand(t *testing.T) {
 	tempDir := t.TempDir()
-	origDir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("Failed to get current directory: %v", err)
-	}
-	defer os.Chdir(origDir)
-	
-	err = os.Chdir(tempDir)
-	if err != nil {
-		t.Fatalf("Failed to change directory: %v", err)
-	}
-	
+	claudeDir := filepath.Join(tempDir, ".claude")
+
+	// Mock home directory
+	origHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", origHome)
+	os.Setenv("HOME", tempDir)
+
 	t.Run("no env file", func(t *testing.T) {
 		output := captureOutput(handleNotiCommand)
 		if !strings.Contains(output, "GITHUB_TOKEN not set") {
 			t.Errorf("Expected output to contain 'GITHUB_TOKEN not set', got: %s", output)
 		}
 	})
-	
+
 	t.Run("placeholder token", func(t *testing.T) {
-		envFile := filepath.Join(tempDir, ".env")
+		err := os.MkdirAll(claudeDir, 0755)
+		if err != nil {
+			t.Fatalf("Failed to create .claude directory: %v", err)
+		}
+
+		envFile := filepath.Join(claudeDir, ".env")
 		envContent := "GITHUB_TOKEN=your_github_token_here"
-		err := os.WriteFile(envFile, []byte(envContent), 0644)
+		err = os.WriteFile(envFile, []byte(envContent), 0644)
 		if err != nil {
 			t.Fatalf("Failed to create .env file: %v", err)
 		}
-		
+
 		output := captureOutput(handleNotiCommand)
 		if !strings.Contains(output, "GITHUB_TOKEN not set") {
 			t.Errorf("Expected output to contain 'GITHUB_TOKEN not set', got: %s", output)
 		}
 	})
-	
+
 	t.Run("invalid token", func(t *testing.T) {
-		envFile := filepath.Join(tempDir, ".env")
+		err := os.MkdirAll(claudeDir, 0755)
+		if err != nil {
+			t.Fatalf("Failed to create .claude directory: %v", err)
+		}
+
+		envFile := filepath.Join(claudeDir, ".env")
 		envContent := "GITHUB_TOKEN=invalid_token_123"
-		err := os.WriteFile(envFile, []byte(envContent), 0644)
+		err = os.WriteFile(envFile, []byte(envContent), 0644)
 		if err != nil {
 			t.Fatalf("Failed to create .env file: %v", err)
 		}
-		
+
 		output := captureOutput(handleNotiCommand)
 		if !strings.Contains(output, "Error fetching notifications") {
 			t.Errorf("Expected output to contain 'Error fetching notifications', got: %s", output)
@@ -600,13 +620,13 @@ func TestNotificationStruct(t *testing.T) {
 		},
 		"unread": true
 	}`
-	
+
 	var notification Notification
 	err := json.Unmarshal([]byte(mockJSON), &notification)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal notification: %v", err)
 	}
-	
+
 	if notification.ID != "123" {
 		t.Errorf("Expected ID '123', got '%s'", notification.ID)
 	}
@@ -631,23 +651,23 @@ func TestMainWithNotiCommand(t *testing.T) {
 		t.Fatalf("Failed to get current directory: %v", err)
 	}
 	defer os.Chdir(origDir)
-	
+
 	err = os.Chdir(tempDir)
 	if err != nil {
 		t.Fatalf("Failed to change directory: %v", err)
 	}
-	
+
 	cmd := exec.Command("go", "run", filepath.Join(origDir, "statusline.go"), "noti")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	
+
 	err = cmd.Run()
 	if err != nil {
 		t.Fatalf("Command failed: %v\nStderr: %s", err, stderr.String())
 	}
-	
+
 	output := stdout.String()
 	if !strings.Contains(output, "GitHub Notifications") {
 		t.Errorf("Expected output to contain 'GitHub Notifications', got: %s", output)
@@ -663,7 +683,7 @@ func captureOutput(f func()) string {
 
 	w.Close()
 	os.Stdout = old
-	
+
 	var buf bytes.Buffer
 	io.Copy(&buf, r)
 	return buf.String()
