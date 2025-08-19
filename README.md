@@ -1,4 +1,4 @@
-# Claude Code Custom Statusline
+# Claude Code git Statusline
 
 Enhanced statusline for [Claude Code](https://claude.ai/code) with Git status, GitHub notifications, and smart path display.
 
@@ -57,8 +57,6 @@ main ~1(1f+189-16) ~1(1f+242) 🔔3 ~/project      # + GitHub notifications (opt
 | `-N`       | N deleted files             |
 | `(NfM+L-)` | N files, M+ lines, L- lines |
 | `🔔N`      | N GitHub notifications      |
-
-**Order**: Staged changes first, then unstaged changes
 
 ## Cache
 
