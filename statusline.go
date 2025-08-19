@@ -122,10 +122,16 @@ func getGitStatus(dir string) string {
 	}
 
 	var statusParts []string
-	staged := 0
-	modified := 0
-	added := 0
-	deleted := 0
+	
+	// Staged changes
+	stagedAdded := 0
+	stagedModified := 0
+	stagedDeleted := 0
+	
+	// Unstaged changes
+	unstagedAdded := 0
+	unstagedModified := 0
+	unstagedDeleted := 0
 
 	for _, line := range lines {
 		if len(line) < 2 {
@@ -133,32 +139,64 @@ func getGitStatus(dir string) string {
 		}
 
 		stagedStatus := line[0]
-		// workingStatus := line[1]
+		workingStatus := line[1]
 
 		// Count staged changes
 		if stagedStatus != ' ' && stagedStatus != '?' {
-			staged++
 			switch stagedStatus {
 			case 'A':
-				added++
+				stagedAdded++
 			case 'D':
-				deleted++
+				stagedDeleted++
 			case 'M', 'R', 'C':
-				modified++
+				stagedModified++
 			}
+		}
+
+		// Count unstaged changes
+		if workingStatus != ' ' && workingStatus != '?' {
+			switch workingStatus {
+			case 'M':
+				unstagedModified++
+			case 'D':
+				unstagedDeleted++
+			}
+		}
+		
+		// Handle untracked files as unstaged additions
+		if stagedStatus == '?' && workingStatus == '?' {
+			unstagedAdded++
 		}
 	}
 
-	if staged > 0 {
+	// Show staged changes
+	if stagedAdded > 0 || stagedModified > 0 || stagedDeleted > 0 {
 		var parts []string
-		if added > 0 {
-			parts = append(parts, fmt.Sprintf("\033[32m+%d\033[0m", added))
+		if stagedAdded > 0 {
+			parts = append(parts, fmt.Sprintf("\033[32m+%d\033[0m", stagedAdded))
 		}
-		if modified > 0 {
-			parts = append(parts, fmt.Sprintf("\033[33m~%d\033[0m", modified))
+		if stagedModified > 0 {
+			parts = append(parts, fmt.Sprintf("\033[33m~%d\033[0m", stagedModified))
 		}
-		if deleted > 0 {
-			parts = append(parts, fmt.Sprintf("\033[31m-%d\033[0m", deleted))
+		if stagedDeleted > 0 {
+			parts = append(parts, fmt.Sprintf("\033[31m-%d\033[0m", stagedDeleted))
+		}
+		if len(parts) > 0 {
+			statusParts = append(statusParts, strings.Join(parts, ""))
+		}
+	}
+
+	// Show unstaged changes
+	if unstagedAdded > 0 || unstagedModified > 0 || unstagedDeleted > 0 {
+		var parts []string
+		if unstagedAdded > 0 {
+			parts = append(parts, fmt.Sprintf("\033[92m+%d\033[0m", unstagedAdded))
+		}
+		if unstagedModified > 0 {
+			parts = append(parts, fmt.Sprintf("\033[93m~%d\033[0m", unstagedModified))
+		}
+		if unstagedDeleted > 0 {
+			parts = append(parts, fmt.Sprintf("\033[91m-%d\033[0m", unstagedDeleted))
 		}
 		if len(parts) > 0 {
 			statusParts = append(statusParts, strings.Join(parts, ""))
