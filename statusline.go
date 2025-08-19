@@ -5,12 +5,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strings"
 	"time"
 )
+
+type Notification struct {
+	ID      string `json:"id"`
+	Reason  string `json:"reason"`
+	Subject struct {
+		Title string `json:"title"`
+		URL   string `json:"url"`
+		Type  string `json:"type"`
+	} `json:"subject"`
+	Repository struct {
+		FullName string `json:"full_name"`
+	} `json:"repository"`
+	Unread bool `json:"unread"`
+}
 
 type StatusLineInput struct {
 	SessionID      string `json:"session_id"`
@@ -31,6 +47,12 @@ type StatusLineInput struct {
 }
 
 func main() {
+	// Check for command-line arguments first
+	if len(os.Args) > 1 && os.Args[1] == "noti" {
+		handleNotiCommand()
+		return
+	}
+
 	// Read JSON input from stdin
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
@@ -59,27 +81,38 @@ func main() {
 		gitStatus = getGitStatus(data.Workspace.CurrentDir)
 	}
 
+	// Get GitHub notifications
+	envVars := loadEnv()
+	notiCount := getNotificationCount(envVars)
+	var notiStatus string
+	if notiCount > 0 {
+		notiStatus = fmt.Sprintf(" \033[31m🔔%d\033[0m", notiCount)
+	}
+
 	// Shorten the path display
 	pwdShort := shortenPath(data.Workspace.CurrentDir, currentUser.HomeDir, data.Workspace.ProjectDir)
 
 	if gitBranch != "" {
 		if gitStatus != "" {
-			template := `%s%s %s`
+			template := `%s%s%s %s`
 			output := fmt.Sprintf(template,
 				fmt.Sprintf("\033[36m%s\033[0m", gitBranch),
 				gitStatus,
+				notiStatus,
 				fmt.Sprintf("\033[35m%s\033[0m", pwdShort))
 			fmt.Print(output)
 		} else {
-			template := `%s %s`
+			template := `%s%s %s`
 			output := fmt.Sprintf(template,
 				fmt.Sprintf("\033[36m%s\033[0m", gitBranch),
+				notiStatus,
 				fmt.Sprintf("\033[35m%s\033[0m", pwdShort))
 			fmt.Print(output)
 		}
 	} else {
-		template := `%s`
+		template := `%s%s`
 		output := fmt.Sprintf(template,
+			notiStatus,
 			fmt.Sprintf("\033[35m%s\033[0m", pwdShort))
 		fmt.Print(output)
 	}
@@ -122,11 +155,11 @@ func getGitStatus(dir string) string {
 	}
 
 	var statusParts []string
-	
+
 	stagedAdded := 0
 	stagedModified := 0
 	stagedDeleted := 0
-	
+
 	unstagedAdded := 0
 	unstagedModified := 0
 	unstagedDeleted := 0
@@ -158,7 +191,7 @@ func getGitStatus(dir string) string {
 				unstagedDeleted++
 			}
 		}
-		
+
 		if stagedStatus == '?' && workingStatus == '?' {
 			unstagedAdded++
 		}
@@ -310,11 +343,11 @@ func (c *Cache) Get(key string) (string, bool) {
 	if !found {
 		return "", false
 	}
-	
+
 	if c.isValid(entry) {
 		return entry.Content, true
 	}
-	
+
 	return "", false
 }
 
@@ -324,7 +357,7 @@ func (c *Cache) Set(key, content string) error {
 		Key:       key,
 		Content:   content,
 	}
-	
+
 	return c.appendEntry(entry)
 }
 
@@ -334,28 +367,28 @@ func (c *Cache) getLatestEntry(key string) (CacheEntry, bool) {
 		return CacheEntry{}, false
 	}
 	defer file.Close()
-	
+
 	var latestEntry CacheEntry
 	found := false
-	
+
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
-		
+
 		var entry CacheEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
 			continue
 		}
-		
+
 		if entry.Key == key {
 			latestEntry = entry
 			found = true
 		}
 	}
-	
+
 	return latestEntry, found
 }
 
@@ -365,12 +398,12 @@ func (c *Cache) appendEntry(entry CacheEntry) error {
 		return err
 	}
 	defer file.Close()
-	
+
 	data, err := json.Marshal(entry)
 	if err != nil {
 		return err
 	}
-	
+
 	_, err = file.Write(append(data, '\n'))
 	return err
 }
@@ -379,3 +412,143 @@ func (c *Cache) isValid(entry CacheEntry) bool {
 	return time.Since(entry.Timestamp) <= c.TTL
 }
 
+func loadEnv() map[string]string {
+	envVars := make(map[string]string)
+	file, err := os.Open(".env")
+	if err != nil {
+		return envVars
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		envVars[key] = value
+	}
+	return envVars
+}
+
+func fetchGitHubNotifications(token string) ([]Notification, error) {
+	if token == "" {
+		return nil, fmt.Errorf("GitHub token not provided")
+	}
+
+	apiURL := "https://api.github.com/notifications?all=false&participating=true"
+
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	req.Header.Set("Authorization", "token "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("User-Agent", "statusline-cli")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("GitHub API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %v", err)
+	}
+
+	var notifications []Notification
+	if err := json.Unmarshal(body, &notifications); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %v", err)
+	}
+
+	return notifications, nil
+}
+
+func getNotificationCount(envVars map[string]string) int {
+	token := envVars["GITHUB_TOKEN"]
+	if token == "" {
+		return -1
+	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return -1
+	}
+
+	cacheFile := filepath.Join(homeDir, ".statusline_cache")
+	cache := NewCache(cacheFile, 5*time.Minute)
+
+	cacheKey := "github_notifications"
+	if cached, found := cache.Get(cacheKey); found {
+		var count int
+		if err := json.Unmarshal([]byte(cached), &count); err == nil {
+			return count
+		}
+	}
+
+	notifications, err := fetchGitHubNotifications(token)
+	if err != nil {
+		return -1
+	}
+
+	count := len(notifications)
+	if countBytes, err := json.Marshal(count); err == nil {
+		cache.Set(cacheKey, string(countBytes))
+	}
+
+	return count
+}
+
+func handleNotiCommand() {
+	envVars := loadEnv()
+
+	fmt.Println("🔔 GitHub Notifications")
+	fmt.Println("=======================")
+
+	token := envVars["GITHUB_TOKEN"]
+	if token == "" || token == "your_github_token_here" {
+		fmt.Println("❌ GITHUB_TOKEN not set in .env file")
+		fmt.Println("Please add your GitHub token to .env file:")
+		fmt.Println("GITHUB_TOKEN=your_personal_access_token")
+		return
+	}
+
+	notifications, err := fetchGitHubNotifications(token)
+	if err != nil {
+		fmt.Printf("❌ Error fetching notifications: %v\n", err)
+		return
+	}
+
+	if len(notifications) == 0 {
+		fmt.Println("✅ No unread notifications")
+		return
+	}
+
+	fmt.Printf("📨 Found %d unread notification(s):\n\n", len(notifications))
+
+	for i, n := range notifications {
+		fmt.Printf("%d. [%s] %s\n", i+1, n.Subject.Type, n.Subject.Title)
+		fmt.Printf("   Repository: %s\n", n.Repository.FullName)
+		fmt.Printf("   Reason: %s\n", n.Reason)
+		if n.Subject.URL != "" {
+			fmt.Printf("   URL: %s\n", n.Subject.URL)
+		}
+		fmt.Println()
+	}
+}
